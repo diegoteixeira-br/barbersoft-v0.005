@@ -47,18 +47,23 @@ serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
 
-    // Create admin client for DB operations
+    // Validate user token using anon client with auth header
+    const supabaseAuth = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(token);
+    if (userError || !user) throw new Error(`Authentication error: ${userError?.message || "Invalid token"}`);
+
+    // Create admin client for DB operations (bypasses RLS)
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { persistSession: false } }
     );
-
-    // Validate user token
-    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-    if (userError || !userData?.user) throw new Error(`Authentication error: ${userError?.message || "Invalid token"}`);
     
-    const user = userData.user;
     if (!user?.email) throw new Error("User not authenticated or email not available");
     logStep("User authenticated", { userId: user.id, email: user.email });
 
