@@ -226,6 +226,8 @@ export default function Agenda() {
               isRefreshing={appointmentsFetching}
               isCompactMode={isCompactMode}
               onToggleCompactMode={handleToggleCompactMode}
+              showBusinessHoursOnly={showBusinessHoursOnly}
+              onToggleBusinessHours={handleToggleBusinessHours}
             />
 
             {isLoading ? (
