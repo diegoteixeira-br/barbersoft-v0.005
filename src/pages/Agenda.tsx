@@ -256,6 +256,7 @@ export default function Agenda() {
                     isOpenOnDate={isOpenOnDate}
                     getOpeningHours={getOpeningHours}
                     isHoliday={isHoliday}
+                    showBusinessHoursOnly={showBusinessHoursOnly}
                   />
                 )}
                 {view === "day" && (
