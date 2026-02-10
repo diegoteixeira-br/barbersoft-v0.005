@@ -22,6 +22,8 @@ interface CalendarHeaderProps {
   isRefreshing?: boolean;
   isCompactMode?: boolean;
   onToggleCompactMode?: () => void;
+  showBusinessHoursOnly?: boolean;
+  onToggleBusinessHours?: () => void;
 }
 
 export function CalendarHeader({
