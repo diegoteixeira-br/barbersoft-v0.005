@@ -1,124 +1,37 @@
 
 
-# Sistema de Indicacao (Referral Program)
+# Melhorar Botoes e Alinhamento da Landing Page
 
-## O que muda para voce
-- Na sidebar e no dashboard, um novo item **"Indique e Ganhe"** permite compartilhar um link unico de indicacao
-- Quando alguem se cadastra pelo seu link e faz o primeiro pagamento, **ambos ganham 30 dias gratis** na proxima renovacao
-- Um painel mostra quantos amigos voce indicou, quantos ja converteram e quantos meses voce ja ganhou
+## Problemas identificados
+1. Os botoes "Testar Gratis" (navbar) e "Testar Gratis Agora" (hero) levam direto ao cadastro, sem o usuario ver os precos antes - causa confusao
+2. O badge "Sem cartao de credito" e falso e precisa ser removido
+3. Os botoes "Comecar Agora" dos planos Inicial e Franquias estao em cinza (`bg-muted`) e sao pouco legiveis
 
-## Como vai funcionar
-1. Cada empresa recebe um codigo unico automaticamente (ex: `ABC123`)
-2. O usuario compartilha o link `app.barbersoft.com/auth?tab=signup&ref=ABC123`
-3. O visitante se cadastra normalmente - o codigo fica salvo no localStorage
-4. Ao criar a conta, um registro `referral` com status `pending` e criado
-5. Quando o convidado faz o primeiro pagamento (Stripe webhook), o sistema:
-   - Aplica cupom de 100% para a proxima fatura do **convidado**
-   - Aplica cupom de 100% para a proxima fatura do **indicador**
-   - Atualiza o status do referral para `completed`
+## O que muda
 
-## Fluxo Visual
+### Botoes da Navbar e Hero
+- **Navbar**: "Testar Gratis" vira **"Conheca os Planos"** e faz scroll suave ate a secao de precos (#precos)
+- **Hero**: "Testar Gratis Agora" vira **"Conheca os Planos"** e tambem faz scroll ate #precos
+- O menu mobile tambem recebe a mesma alteracao
 
-```text
-[Usuario A] --compartilha link--> [Usuario B acessa /auth?ref=CODE]
-                                         |
-                                    [Cadastro + ref salvo localStorage]
-                                         |
-                                    [Cria company + referral (pending)]
-                                         |
-                                    [Primeiro pagamento Stripe]
-                                         |
-                                    [Webhook: invoice.paid]
-                                         |
-                              [Verifica se e 1o pagamento]
-                              [Busca referral pending]
-                                         |
-                          [Aplica cupom 100% para ambos]
-                          [Status -> completed]
-```
+### Trust Badges (Hero)
+- Remover "Sem cartao de credito"
+- Manter "7 dias gratis" e "Suporte humanizado"
 
----
+### Botoes dos Planos (PricingSection)
+- Trocar `bg-muted hover:bg-muted/80` por um estilo com borda dourada e texto legivel: `border border-gold/50 bg-gold/10 hover:bg-gold/20 text-foreground font-semibold`
+- Os 3 planos ficam com botoes visiveis e legíveis
 
 ## Detalhes Tecnicos
 
-### 1. Banco de Dados (Migracao SQL)
+### `src/components/landing/Navbar.tsx`
+- Desktop (linha 86-88): Trocar `Link to="/auth?tab=signup"` por `button onClick scroll to #precos`, texto "Conheca os Planos"
+- Mobile (linha 160-165): Mesma alteracao
 
-**Coluna na tabela `companies`:**
-- `referral_code TEXT UNIQUE` - codigo unico gerado automaticamente
+### `src/components/landing/HeroSection.tsx`
+- Botao principal (linhas 58-65): Trocar `navigate("/auth?tab=signup")` por scroll suave ate `#precos`, texto "Conheca os Planos"
+- Trust badges (linhas 85-89): Remover o bloco "Sem cartao de credito"
 
-**Nova tabela `referrals`:**
-- `id` (uuid, PK)
-- `referrer_company_id` (uuid, FK -> companies.id) - quem indicou
-- `referred_company_id` (uuid, FK -> companies.id) - quem foi indicado
-- `status` (text: 'pending' | 'completed')
-- `completed_at` (timestamptz, nullable)
-- `created_at` (timestamptz, default now())
-
-**RLS policies para `referrals`:**
-- SELECT: usuario pode ver referrals onde ele e o dono da company referrer OU referred (usando `user_owns_company`)
-- INSERT: via service_role apenas (edge function)
-- UPDATE: via service_role apenas (edge function)
-
-**Trigger:** ao criar uma company, gerar automaticamente um `referral_code` unico de 8 caracteres alfanumericos
-
-### 2. Frontend - Pagina Auth (`src/pages/Auth.tsx`)
-
-- Ler `ref` dos search params e salvar no `localStorage` como `referral_code`
-- No `handleSignup`, apos criar a company, verificar se existe `referral_code` no localStorage
-- Se existir, buscar a company do indicador pelo codigo e inserir na tabela `referrals` com status `pending`
-- Limpar localStorage apos inserir
-
-### 3. Frontend - Componente "Indique e Ganhe" (`src/components/referral/ReferralCard.tsx`)
-
-- Card com o link de indicacao copiavel
-- Botoes de compartilhar (copiar link, WhatsApp)
-- Estatisticas: total de indicacoes, convertidas, meses ganhos
-- Hook `src/hooks/useReferrals.ts` para buscar dados
-
-### 4. Frontend - Dashboard Integration
-
-- Adicionar o `ReferralCard` no Dashboard ou como item no menu lateral
-- Adicionar rota `/indicacoes` no App.tsx dentro das ProtectedRoutes
-
-### 5. Backend - Stripe Webhook (`supabase/functions/stripe-webhook/index.ts`)
-
-Extender o case `invoice.paid` existente com a logica de referral:
-
-```text
-case "invoice.paid":
-  1. Buscar company pelo stripe_subscription_id
-  2. Verificar se e a primeira invoice paga (billing_reason === 'subscription_create' 
-     OU contar invoices anteriores pagas = 0)
-  3. Buscar referral pendente onde referred_company_id = company.id
-  4. Se encontrar:
-     a. Buscar subscription do convidado -> aplicar coupon 100% (duration: once)
-     b. Buscar subscription do indicador -> aplicar coupon 100% (duration: once)
-     c. Atualizar referral.status = 'completed', completed_at = now()
-```
-
-**Cupom Stripe:** Criar cupom via API `stripe.coupons.create({ percent_off: 100, duration: 'once', name: 'Referral - 1 Mes Gratis' })` e aplicar com `stripe.subscriptions.update(subId, { coupon: couponId })`
-
-### 6. Config (`supabase/config.toml`)
-
-Ja existe `verify_jwt = false` para webhook. Sem alteracoes necessarias.
-
-### Arquivos criados/alterados
-
-| Arquivo | Acao |
-|---------|------|
-| Migracao SQL (via Supabase) | Criar tabela `referrals`, coluna `referral_code`, trigger, RLS |
-| `src/pages/Auth.tsx` | Ler `ref` param, salvar localStorage, criar referral no signup |
-| `src/hooks/useReferrals.ts` | Novo - hook para buscar/gerenciar referrals |
-| `src/components/referral/ReferralCard.tsx` | Novo - UI de compartilhamento e estatisticas |
-| `src/pages/Indicacoes.tsx` | Novo - pagina dedicada ao programa de indicacao |
-| `src/App.tsx` | Adicionar rota `/indicacoes` |
-| `src/components/layout/AppSidebar.tsx` | Adicionar item "Indique e Ganhe" no menu |
-| `supabase/functions/stripe-webhook/index.ts` | Extender `invoice.paid` com logica de referral |
-
-### Seguranca
-- Referrals so podem ser criados/atualizados pelo service_role (edge functions)
-- Usuario so ve seus proprios referrals via RLS
-- Codigo de referral e unico e gerado server-side (trigger)
-- Beneficio so e liberado apos confirmacao de pagamento (webhook assincrono)
-- Auto-referral e bloqueado (verificacao no signup)
+### `src/components/landing/PricingSection.tsx`
+- Botao dos planos nao-highlighted (linha ~179): Trocar classes `bg-muted hover:bg-muted/80` por `border border-gold/50 bg-gold/10 hover:bg-gold/20 text-foreground font-semibold`
 
